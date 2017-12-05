@@ -89,3 +89,25 @@ train imgF lblF = do
   return smart
 
  
+testNN :: String -> String -> Brain {-IO [([Float], [[Float]])]-} -> IO Int
+testNN imgF lblF brain = do
+  smart <- brain
+  [testI, testL] <- mapM ((decompress <$> ) . BS.readFile) [imgF, lblF]
+  let
+    bestOf = fst . maximumBy (comparing snd) . zip [0..]
+    answers = getLabel testL <$> [0..9999]
+    gusses = bestOf . (\n -> feed (getX testI n) smart) <$> [0..9999]
+  return $ sum (fromEnum <$> zipWith (==) gusses answers) `div` 100
+
+writeNNToFile :: String -> Brain -> Brain
+writeNNToFile fName brain= do
+  smart <- brain
+  writeFile fName $ show smart
+  return smart
+
+readNNFile :: String -> Brain
+readNNFile fName = do
+  sSmart <- readFile fName
+  let smart = read sSmart :: [([Float], [[Float]])]
+  return smart
+  
