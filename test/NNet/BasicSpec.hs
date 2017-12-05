@@ -17,8 +17,6 @@ sigmoidSpec = describe "Sigmoid" $ do
   it "returns one when given any positive input" $ property $
     \x -> x >= 0 ==> sigmoidSimple x == 1
 
-feedSpec :: Spec
-sigmoidSpec = describe "Feed" $ do
   
 
 -- randomNumberGeneratorSpec :: Spec
