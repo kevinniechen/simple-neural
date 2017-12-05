@@ -1,6 +1,6 @@
 module NNet where
 import Codec.Compression.GZip (decompress)
-import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Lazy as ByteMe
 
 import System.IO
 import Control.Monad
@@ -14,89 +14,84 @@ type Brain =  IO [([Float], [[Float]])]
 --
 {-@newBrain :: {v:[Int]| length' v>0} -> Brain@-}
 newBrain :: [Int] -> Brain -- IO [([Float], [[Float]])]
-
+width = 28
+height = 28
 -- Box–Muller transform
-gauss :: Float -> IO Float
+bmt :: Float -> IO Float
 
 -- This is to move from layer to layer
-zLayer :: [Float] -> ([Float], [[Float]]) -> [Float]
+pushThroughLayer :: [Float] -> ([Float], [[Float]]) -> [Float]
 feed :: [Float] -> [([Float], [[Float]])] -> [Float]
-revaz :: [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
-deltas :: [Float] -> [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
-learn :: [Float] -> [Float] -> [([Float], [[Float]])] -> [([Float], [[Float]])]
-relu :: Float -> Float
-render :: Integral a => a -> Char
+reverseBrain :: [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
+δs :: [Float] -> [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
+processNN :: [Float] -> [Float] -> [([Float], [[Float]])] -> [([Float], [[Float]])]
+sigmoidSimple :: Float -> Float
+num2Str :: Integral a => a -> Char
 
-gauss scale = do
+bmt scale = do
   x1 <- randomIO
   x2 <- randomIO
   return $ scale * sqrt (-2 * log x1) * cos (2 * pi * x2)
 
 newBrain (hs:ts) = zip (flip replicate 1 <$> ts) <$>
-  zipWithM (\m n -> replicateM n $ replicateM m $ gauss 0.01) (hs:ts) ts
+  zipWithM (\m n -> replicateM n $ replicateM m $ bmt 0.01) (hs:ts) ts
 
-relu = max 0
-relu' x | x < 0      = 0
+sigmoidSimple x | x < 0      = 0
         | otherwise  = 1
 
-zLayer as (bs, wvs) = zipWith (+) bs $ sum . zipWith (*) as <$> wvs
+pushThroughLayer as (bs, wvs) = zipWith (+) bs $ sum . zipWith (*) as <$> wvs
 
-feed = foldl' (((relu <$>) . ) . zLayer)
+feed = foldl' ((((max 0) <$>) . ) . pushThroughLayer)
 
-revaz xs = foldl' (\(av:avt, zs) (bs, wms) -> let
-  zs' = zLayer av (bs, wms) in ((relu <$> zs'):(av:avt), zs':zs)) ([xs], [])
+reverseBrain xs = foldl' (\(av:avt, zs) (bs, wms) -> (((max 0) <$> (pushThroughLayer av (bs, wms))):(av:avt), (pushThroughLayer av (bs, wms)):zs)) ([xs], [])
 
-{-@dCost :: Num a=> a -> a -> {v:a| v <= 0}@-}
-dCost a y | y == 1 && a >= y = 0
+
+{-@cost :: Num a=> a -> a -> {v:a| v <= 0}@-}
+cost a y | y == 1 && a >= y = 0
           | otherwise        = a - y
 
-deltas xv yv layers = let
-  (avs@(av:_), zv:zvs) = revaz xv layers
-  delta0 = zipWith (*) (zipWith dCost av yv) (relu' <$> zv)
-  in (reverse avs, f (transpose . snd <$> reverse layers) zvs [delta0]) where
+δs vec1 vec2 layers = (reverse (avh:avt), f (transpose . snd <$> reverse layers) zvs [initalDel])
+  where
     f _ [] dvs = dvs
-    f (wm:wms) (zv:zvs) dvs@(dv:_) = f wms zvs $ (:dvs) $
-      zipWith (*) [sum $ zipWith (*) row dv | row <- wm] (relu' <$> zv)
+    f (wm:wms) (zv:zvs) (dvh:dvt) = f wms zvs $ (:(dvh:dvt)) $ zipWith (*) [sum $ zipWith (*) row dvh | row <- wm] (sigmoidSimple <$> zv)
+    (avh:avt, zv:zvs) = reverseBrain vec1 layers
+    initalDel = zipWith (*) (zipWith cost avh vec2) (sigmoidSimple <$> zv)
 
-eta = 0.002
 
-descend av dv = zipWith (-) av ((eta *) <$> dv)
+descend aVecs delVecs = zipWith (-) aVecs ((0.002 *) <$> delVecs)
 
-learn xv yv layers = let (avs, dvs) = deltas xv yv layers
+processNN vec1 vec2 layers = let (avs, dvs) = δs vec1 vec2 layers
   in zip (zipWith descend (fst <$> layers) dvs) $
     zipWith3 (\wvs av dv -> zipWith (\wv d -> descend wv ((d*) <$> av)) wvs dv)
       (snd <$> layers) avs dvs
 
-getImage s n = fromIntegral . BS.index s . (n*28^2 + 16 +) <$> [0..28^2 - 1]
-getX     s n = (/ 256) <$> getImage s n
-getLabel s n = fromIntegral $ BS.index s (n + 8)
-getY     s n = fromIntegral . fromEnum . (getLabel s n ==) <$> [0..9]
+getimg s n = fromIntegral . ByteMe.index s . (n*width^2 + 16 +) <$> [0..height^2 - 1]
+getx     s n = (/ 256) <$> getimg s n
+getlabel s n = fromIntegral $ ByteMe.index s (n + 8)
+gety    s n = fromIntegral . fromEnum . (getlabel s n ==) <$> [0..9]
 
 
-render n = let s = " .:oO@" in s !! (fromIntegral n * length s `div` 256)
+num2Str n =  let i = fromIntegral n * 2 `div` 256 in head (show i)
 
 train :: String -> String -> Brain -- IO [([Float], [[Float]])]
 train imgF lblF = do
   b <- newBrain [784, 30, 10]
-  [trainI, trainL] <- mapM ((decompress <$> ) . BS.readFile) [imgF, lblF]
+  trainImg <- ((decompress <$> ) . ByteMe.readFile) imgF
+  trainLbl <- ((decompress <$> ) . ByteMe.readFile) lblF
   let
-    bs = scanl (foldl' (\b n -> learn (getX trainI n) (getY trainL n) b)) b [
-     [   0.. 999],
-     [1000..2999],
-     [3000..5999],
-     [6000..9999]]
-    smart = last bs
+    smart = (foldl' (\b n -> processNN (getx trainImg n) (gety trainLbl n) b)) b [   0.. 9999]
   return smart
 
- 
+
 testNN :: String -> String -> Brain {-IO [([Float], [[Float]])]-} -> IO Int
 testNN imgF lblF brain = do
   smart <- brain
-  [testI, testL] <- mapM ((decompress <$> ) . BS.readFile) [imgF, lblF]
+  testimg <- ((decompress <$> ) . ByteMe.readFile) imgF
+  testlbls <- ((decompress <$> ) . ByteMe.readFile) lblF
   let
     bestOf = fst . maximumBy (comparing snd) . zip [0..]
-    answers = getLabel testL <$> [0..9999]
-    gusses = bestOf . (\n -> feed (getX testI n) smart) <$> [0..9999]
+    answers = getlabel testlbls <$> [0..9999]
+    gusses = bestOf . (\n -> feed (getx testimg n) smart) <$> [0..9999]
   return $ sum (fromEnum <$> zipWith (==) gusses answers) `div` 100
 
 writeNNToFile :: String -> Brain -> Brain
@@ -110,4 +105,3 @@ readNNFile fName = do
   sSmart <- readFile fName
   let smart = read sSmart :: [([Float], [[Float]])]
   return smart
-  
