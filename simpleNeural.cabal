@@ -30,7 +30,7 @@ executable simple-neural
 
 Test-Suite test-simple-neural
   Type:                exitcode-stdio-1.0
-  Main-is:             TestMain.hs
+  Main-is:             NNetSpec.hs
   Hs-Source-Dirs:      src, test
   other-modules:       NNet
   build-depends:       base >=4.9 && <4.11
