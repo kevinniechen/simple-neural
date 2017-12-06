@@ -2,10 +2,9 @@ module NNet where
 import Codec.Compression.GZip (decompress)
 import qualified Data.ByteString.Lazy as ByteMe
 
-import System.IO
 import Control.Monad
-import Data.Functor
 import Data.Ord
+import Data.Int
 import Data.List
 import System.Random
 
@@ -14,6 +13,8 @@ type Brain =  IO [([Float], [[Float]])]
 --
 {-@newBrain :: {v:[Int]| length' v>0} -> Brain@-}
 newBrain :: [Int] -> Brain -- IO [([Float], [[Float]])]
+
+
 width = 28
 height = 28
 -- Box–Muller transform
@@ -27,6 +28,8 @@ reverseBrain :: [Float] -> [([Float], [[Float]])] -> ([[Float]], [[Float]])
 processNN :: [Float] -> [Float] -> [([Float], [[Float]])] -> [([Float], [[Float]])]
 sigmoidSimple :: Float -> Float
 num2Str :: Integral a => a -> Char
+cost :: (Ord t, Num t) => t -> t -> t
+descend :: Fractional c => [c] -> [c] -> [c]
 
 bmt scale = do
   x1 <- randomIO
@@ -35,6 +38,7 @@ bmt scale = do
 
 newBrain (hs:ts) = zip (flip replicate 1 <$> ts) <$>
   zipWithM (\m n -> replicateM n $ replicateM m $ bmt 0.01) (hs:ts) ts
+newBrain _ = error "New Brain: Empty List provided"
 
 sigmoidSimple x | x < 0      = 0
         | otherwise  = 1
@@ -53,17 +57,18 @@ cost a y | y == 1 && a >= y = 0
 δs vec1 vec2 layers = (reverse (avh:avt), f (transpose . snd <$> reverse layers) zvs [initalDel])
   where
     f _ [] dvs = dvs
-    f (wm:wms) (zv:zvs) (dvh:dvt) = f wms zvs $ (:(dvh:dvt)) $ zipWith (*) [sum $ zipWith (*) row dvh | row <- wm] (sigmoidSimple <$> zv)
+    f (wm:wms) (zvh:zvt) (dvh:dvt) = f wms zvt $ (:(dvh:dvt)) $ zipWith (*) [sum $ zipWith (*) row dvh | row <- wm] (sigmoidSimple <$> zvh)
+    f _ _ _  = error "undefined case in δs"
     (avh:avt, zv:zvs) = reverseBrain vec1 layers
     initalDel = zipWith (*) (zipWith cost avh vec2) (sigmoidSimple <$> zv)
 
 
 descend aVecs delVecs = zipWith (-) aVecs ((0.002 *) <$> delVecs)
 
-processNN vec1 vec2 layers = let (avs, dvs) = δs vec1 vec2 layers
-  in zip (zipWith descend (fst <$> layers) dvs) $
-    zipWith3 (\wvs av dv -> zipWith (\wv d -> descend wv ((d*) <$> av)) wvs dv)
+processNN vec1 vec2 layers = zip (zipWith descend (fst <$> layers) dvs) $ zipWith3 (\wvs av dv -> zipWith (\wv d -> descend wv ((d*) <$> av)) wvs dv)
       (snd <$> layers) avs dvs
+  where
+    (avs, dvs) = δs vec1 vec2 layers
 
 getimg s n = fromIntegral . ByteMe.index s . (n*width^2 + 16 +) <$> [0..height^2 - 1]
 getx     s n = (/ 256) <$> getimg s n
