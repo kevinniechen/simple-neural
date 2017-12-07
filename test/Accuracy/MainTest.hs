@@ -24,7 +24,7 @@ main =
     defaultMain $
       testGroup "Tests"
         [ testGroup "Checking if the NNet is working well enough"
-            [  {-let val = (unsafePerformIO test_NN) in -}
+            [ 
                   testCase ("Accuracy test: " ++ show val ++ "%") $
                   val `compare` 74 @?= GT 
 
