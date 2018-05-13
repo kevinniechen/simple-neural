@@ -8,7 +8,6 @@ version:             0.1.0.0
 license:             BSD3
 license-file:        LICENSE
 author:              Suteerth Vishnu, Kevin Chen
-maintainer:          vishnusuteerth@gmail.com, kev@umd.edu
 -- copyright:           
 -- category:            
 build-type:          Simple
